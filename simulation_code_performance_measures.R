@@ -19,7 +19,7 @@ results_list <- list()
 n_sims <- 3000 # Number of simulations
 index <- 1
 
-# before running the loop, please first change specify the parameters in the data. Parameters are 
+# before running the loop, please first change specify the parameters in the data. Parameters are indicated within the simulation loop after the functions that are used to # generate the time series data
 
 
 #run the simulation loop-------
