@@ -1,0 +1,2618 @@
+---
+title: "inconsistency_results and questions"
+author: "Johan Le Grange"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# 1. prepping the environment and data
+
+
+
+First, I setup the environment and set the working directory.
+
+```{r set up environment and working directory}
+
+rm(list=ls()) #remove all elements from the environment
+```
+
+After that, I load the relevant packages:
+
+## 1.1. loading the packages
+
+```{r load relevant packages}
+
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(gridExtra)
+library(patchwork)
+library(DT)
+library(grid)
+library(sjPlot)
+library(kableExtra)
+library(effectsize)
+library(ggdist)
+library(RColorBrewer)
+library(papaja)
+library(readxl)
+library(car)
+library(openxlsx)
+library(effectsize)
+library(e1071)
+library(officer)
+library(flextable)
+library(magrittr)
+library(broom)
+library(rempsyc)
+library(report)
+```
+
+## 1.2. working directory
+
+Below, for privacy reasons, I deleted the path I used to set the working directory. If you use this code, then please insert the relevant directory pathway on your computer in the setwd() function, below. 
+
+```{r}
+#setwd() #  set the working directory
+#getwd() # see if working directory is correctly set
+```
+
+Then, I upload the data and prepare the data set for analysis.
+
+**note that initially we computed three levels of the number of cases, with the number of cases (i.e. j_cases) equaling 1, 3, or 5. However, if only 1 case is included in a multilevel meta-analysis and network meta-analysis, it is impossible to estimate the within-study variance between cases. As a result, in the preparation below we delete all rows that have 1 case.**
+
+```{r upload data + prepare for analysis}
+
+library(readxl)
+
+prelim_results_df <- read_excel("thesis_results.xlsx") #upload the excel file 
+str(prelim_results_df)
+
+```
+
+## 1.4. remove the simulation conditions with only 1 cases (i.e. n_cases=1)
+
+```{r}
+
+#first I count the number of total rows and the number of rows containing n_cases==1.
+
+(nrow(prelim_results_df)) #total number of simulation conditions before deleting number of cases 
+
+(sum(prelim_results_df$n_cases == 1)) #14 conditions of the 42 conditions are j_cases==1. Therefore cases should remain after deleting j_cases
+
+prelim_results_df <- prelim_results_df %>% 
+  filter(n_cases != 1) 
+
+
+nrow(prelim_results_df) #numbwer of rows should now be 28
+```
+
+## 1.5.remove unecessary columns
+
+```{r remove unecessary columns}
+
+prelim_results_df<-prelim_results_df[-c(2,5:9,13:16,25)] # select the relevant columns from the dataset. Also, I deleted column 2, since column 2 is the number of studies comparing interventions b with c. Since the number of studies comparing interventions b with c is the same as the number of studies comparing interventions a and b. I will, therefore, later in this code rename the column called n_ab, to k_ab_bc to reflect this. 
+
+colnames(prelim_results_df)
+```
+
+## 1.6. rename the first and third columns:
+
+```{r}
+
+ # In the text, you will see that we used a three-level multilevel model to produce the data sets       for each intervention comparison (i.e. studies comparing interventions A with B, B with C, and A     with C). In the multilevel model, the symbol "k" is used to denote the studies. Therefore, the       first and seconds columns, n_ab and n_ac respectively, is changed to k_ab_bc and k_ac. The reason     for changing n_ab to k_ab_bc is explained in line 49, above. n_cases is also changes to j_cases      in line 59 below, since the symbol j, in the model used, denotes the number of cases or the j-th     case per simulated study. 
+
+names(prelim_results_df)[1]<- "k_ab_bc" #renaming n_ab to k_ab_bc
+names(prelim_results_df)[2] <- "k_ac" #renaming n_ac to k_ac
+names(prelim_results_df)[3] <- "j_cases" #renaming n_cases to j_cases
+
+colnames(prelim_results_df) #check and see if the renaming of lines 57-59 were correctly executed.
+
+
+```
+
+## 1.7. compute hedges bias correction factor and include it in the prelim_results_df data 
+
+```{r}
+# according to hedges' formula
+
+(correction_factor<-1-(3/(4*18-1)))
+
+colnames(prelim_results_df)
+
+prelim_results_df$Mean_est_B_corrected<-prelim_results_df$Mean_est_B*correction_factor
+prelim_results_df$Mean_est_C_corrected<-prelim_results_df$Mean_est_C*correction_factor
+```
+Now, since I was able to apply the correction factor to the mean estimates, I can compute the absolute and relative biases + MSE of the corrected effect sizes of interventions B and C
+
+```{r}
+
+prelim_results_df$bias_b_corrected<-prelim_results_df$Mean_est_B_corrected-0.9
+
+prelim_results_df$bias_c_corrected<-prelim_results_df$Mean_est_C_corrected-1.6
+
+
+prelim_results_df$relative_bias_b_corrected<-prelim_results_df$bias_b_corrected/0.9
+
+prelim_results_df$relative_bias_c_corrected<-prelim_results_df$bias_c_corrected/1.6
+
+prelim_results_df<-prelim_results_df %>%
+  select(k_ab_bc,k_ac,j_cases,Ratio_Inconsistent,relative_bias_b,relative_bias_b_corrected,Bias_B,relative_bias_c,relative_bias_c_corrected,Bias_C,MSE_B,MSE_C,Power_B,Power_C,Type1_Error_B,Type1_Error_C,Mean_est_B,Mean_est_B_corrected,Mean_est_C,Mean_est_C_corrected)
+
+View(prelim_results_df)
+```
+
+
+## 1.8. save the prelimnary data frame as excel file and equate it to final_results_df
+
+
+
+
+```{r}
+library(openxlsx)
+
+#save this preliminary dataframe as an excel file
+write.xlsx(prelim_results_df, "0_prelim_results_df.xlsx") 
+
+final_results_df<-prelim_results_df #save this dataframe as a new dataframe. the new dataset will be used to set the simulation conditions (i.e. k_ab_bc, k_ac, and j_cases) as factors for the ANOVAs.
+
+str(final_results_df)
+```
+## 1.9. set palette
+
+Then, I prepared the data for the figures by setting a colour blind palette (cf., APA 7th edition)
+
+```{r}
+cbPalette <- c("#E69F00",   # Orange (Vibrant)
+               "#56B4E9",   # Sky Blue (Clear and Bright)
+               "#009E73",   # Bluish Green (Distinguishable)
+               "#F0E442",   # Yellow (Bright)
+               "#0072B2",   # Blue (Strong)
+               "#D55E00",   # Vermilion/Red-Orange (Vibrant)
+               "#000000",   # Black (Strong Contrast)
+               "#808080",   # Grey (Neutral)
+               "#9AB973",   # Sage Green (Muted, Earthy)
+               "#FF7F50")   # Coral (Soft yet Distinguishable)
+
+
+cbPalette_other <- c("#0072B2",   # Blue (Strong)
+                     "#CC79A7",   # Purplish Pink
+                     "#000000",   # Black (Strong Contrast)
+                     "#6A3D9A",   # Plum
+                     "#B15928",   # Brown (Burnt Orange)
+                     "#1F78B4",   # Darker Blue
+                     "#33A02C",   # Dark Green
+                     "#FB9A99")   # Light Salmon
+
+additional_colours <- c("#e17c05", "#4daf4a", "#f781bf", "#a65628", 
+                       "#984ea3", "#ffff33", "#a6cee3")
+
+cbPalette_light <- c("#8DD3C7", "#BEBADA", "#FB8072", "#80B1D3", "#FDB462", "#B3DE69", "#FCCDE5","#D9D9D9","#ADD8E6", "#F08080", "#E0FFFF", "#FAFAD2", "#90EE90", "#FFB6C1", "#FFA07A", "#20B2AA", "#87CEFA", "#778899", "#B0C4DE", "#FFFFE0", "#EEE8AA", "#98FB98")
+
+
+
+
+#ADDITION
+
+# Combine the palettes
+cbPalette_max <- c(cbPalette, cbPalette_other,additional_colours,cbPalette_light)
+cbPalette_max
+
+```
+
+
+
+
+
+
+
+## 1.10. making a dataframe for the plots of each performance measure.
+
+```{r prepare data for figures}
+## make data frame for plots + save these dataframes as excel files 
+
+nrow(final_results_df)
+
+### inconsistency 
+
+inconsistency_df_plots<-final_results_df[c("k_ab_bc","k_ac","j_cases","Ratio_Inconsistent")] 
+
+write.xlsx(inconsistency_df_plots, "0_inconsistency_df_plots.xlsx")                                    
+
+### power of estimate b
+
+power_b_df_plots<-final_results_df[c("k_ab_bc","k_ac","j_cases","Power_B")] 
+
+write.xlsx(power_b_df_plots, "0_power_b_df_plots.xlsx")      
+
+
+### power of estimate c
+
+power_c_df_plots<-final_results_df[c("k_ab_bc","k_ac","j_cases","Power_C")] 
+
+write.xlsx(power_c_df_plots, "0_power_c_df_plots.xlsx") 
+
+class(power_c_df_plots)
+
+
+
+
+### MSE for estimate B
+
+mse_b_df_plots<-final_results_df[c("k_ab_bc","k_ac","j_cases","MSE_B")] 
+
+write.xlsx(mse_b_df_plots, "mse_b_df_plots.xlsx") 
+
+
+
+
+
+### MSE for estimate B
+
+mse_c_df_plots<-final_results_df[c("k_ab_bc","k_ac","j_cases","MSE_C")] 
+
+
+write.xlsx(mse_c_df_plots, "0mse_c_df_plots.xlsx") 
+
+
+
+
+
+
+### Relative Bias of the estimate for intervention B - Plots
+### 
+colnames(final_results_df)
+str(final_results_df)
+relative_bias_b_df_plots<-final_results_df[c("k_ab_bc","k_ac","j_cases","relative_bias_b")] 
+
+write.xlsx(relative_bias_b_df_plots, "0_relative_bias_b_df_plots.xlsx")
+
+
+    ### corrected relative bias B - plots 
+    
+    (relative_bias_b_corrected_plots<-final_results_df[c("k_ab_bc","k_ac","j_cases","relative_bias_b_corrected")])
+
+    write.xlsx(relative_bias_b_corrected_plots,"0_relative_bias_b_corrected_plot.xlsx")
+
+
+    
+    
+### Relative Bias of Intervention C's Estimate 
+
+relative_bias_c_df_plots<-final_results_df[c("k_ab_bc","k_ac","j_cases","relative_bias_c")] 
+
+write.xlsx(relative_bias_c_df_plots, "0_relative_bias_c_df_plots.xlsx")
+
+
+    ### corrected relative bias B - plots 
+    
+    (relative_bias_c_corrected_plots<-final_results_df[c("k_ab_bc","k_ac","j_cases","relative_bias_c_corrected")])
+
+    write.xlsx(relative_bias_c_corrected_plots,"0_relative_bias_c_corrected_plot.xlsx")
+
+
+
+#### Type 1 Error of Estimating Intervention B
+
+
+type_i_error_b_df_plots<-final_results_df[c("k_ab_bc","k_ac","j_cases","Type1_Error_B")] 
+
+write.xlsx(type_i_error_b_df_plots, "0_type_i_error_b_df_plots.xlsx") 
+
+
+
+
+#### Type 1 Error of Estimating Intervention C
+
+type_i_error_c_df_plots<-final_results_df[c("k_ab_bc","k_ac","j_cases","Type1_Error_C")] 
+
+write.xlsx(type_i_error_c_df_plots, "0type_i_error_c_df_plots.xlsx") 
+```
+
+
+
+## 1.11. transform variables to factors for ANOVA
+
+```{r transform predictors into factors}
+#k_ab_bc as factor(as "k_ab_bc_20", "k_ab_bc_30", "k_ab_bc_50")
+
+final_results_df$k_ab_bc<- factor(x=final_results_df$k_ab_bc,
+                               levels=c(20,30,50),
+                               labels=c("k_ab_bc_20", "k_ab_bc_30", "k_ab_bc_50"))
+levels(final_results_df$k_ab_bc)
+print(as.numeric(final_results_df$k_ab_bc))
+
+#Treat n_ac as an independent factor despite the fact that certain n_ac values only appear 
+#when the n_ab/n_bc =30 or 50. 
+
+final_results_df$k_ac<- factor(x=final_results_df$k_ac,
+                               levels=c(1,5,10,15,20,25,30,50),
+                               labels=c("k_ac_1", "k_ac_5","k_ac_10",
+                               "k_ac_15", "k_ac_20", "k_ac_25", "k_ac_30","k_ac_50"))
+levels(final_results_df$k_ac)
+print(as.numeric(final_results_df$k_ac))
+
+
+
+# change j_cases to factors: j_cases_1, j_cases_3, and j_cases_5
+
+final_results_df$j_cases<- factor(x=final_results_df$j_cases,
+                               levels=c(3,5),
+                               labels=c("j_cases_3","j_cases_5"))
+levels(final_results_df$j_cases)
+
+print(as.numeric(final_results_df$j_cases))
+
+
+# see if it all worked to change the structure of final_results_df
+str(final_results_df)
+```
+
+# 2. Overall Results
+
+Below, I compute the mean, and standard deviations of these means, of all the performance measures across all simulation conditions. The performance measures included in my study is:
+
+1.  Inconsistency Ratio
+
+2.  Relative bias of the effect estimate of condition C
+
+3.  Relative bias of the effect estimate of condition B
+
+4.  MSE of B's effect (**note we excluded this here and in the thesis text, as I did not have enough time to include this in the results**)
+
+5.  MSE of C's effect  (**note we excluded this here and in the thesis text, as I did not have enough time to include this in the results**)
+
+6.  The CI coverage proportion  (**note we excluded this here and in the thesis text, as I did not have enough time to include this in the results**)
+
+7.  The width of the confidence intervals  (**note we excluded this here and in the thesis text, as I did not have enough time to include this in the results**)
+
+8.  The power of estimate for B
+
+9.  The power of estimate for C
+
+First, however, I need to merge the columns of the excel file that contains the data on the confidence interval's width and 95% coverage intervals, into the current preliminary results df. I will later, when doing analysis of the CI widths and coverage proportion include these columns to the final_results_df. 
+
+
+```{r merge ci df with existinf prelim_results_df}
+
+
+
+CI_results_df <- read_excel("CI_thesis_results.xlsx",sheet=2) #upload the excel file 
+
+(nrow(CI_results_df)) #total number of simulation conditions before deleting number of cases 
+
+(sum(CI_results_df$n_cases == 1)) #14 conditions of the 42 conditions are j_cases==1. Therefore cases should remain after deleting j_cases
+
+CI_results_df <- CI_results_df%>% 
+  filter(n_cases != 1) 
+# we expect that the number of columns woul go down from 
+nrow(CI_results_df)
+nrow(prelim_results_df)
+
+
+
+CI_results_df<-CI_results_df%>%select(Coverage_Prob_B,Coverage_Prob_C,CI_Diff_B,CI_Diff_C) #extract the relevant columns
+
+View(CI_results_df)
+
+combined_results_df<-cbind(prelim_results_df,CI_results_df)
+
+View(combined_results_df)
+
+
+```
+
+
+Then after doing this, I am now able to calculate the mean and SD for all of the performance measures in my study, using the following R Code:
+
+```{r mean and SD of all performance measures}
+colnames(combined_results_df)
+
+
+combined_results_df_overall<-combined_results_df[-c(1:3,7,10,17:20)]
+colnames(combined_results_df_overall)
+
+performance_measures <- c('Ratio_Inconsistent', 'relative_bias_b','relative_bias_b_corrected','relative_bias_c','relative_bias_c_corrected','MSE_B','MSE_C','Power_B','Power_C','Type1_Error_B','Type1_Error_C','Coverage_Prob_B','Coverage_Prob_C','CI_Diff_B','CI_Diff_C')
+
+
+# Calculate mean, SD, median, IQR, 25th percentile, and 75th percentile for performance measures
+result_list <- list()
+
+for (measure in performance_measures) {
+  mean_value <- mean(combined_results_df_overall[[measure]], na.rm = TRUE)
+  std_dev <- sd(combined_results_df_overall[[measure]], na.rm = TRUE)
+  median_value <- median(combined_results_df_overall[[measure]], na.rm = TRUE)
+  iqr_value <- IQR(combined_results_df_overall[[measure]], na.rm = TRUE)
+  percentile_25 <- quantile(combined_results_df_overall[[measure]], 0.25, na.rm = TRUE)
+  percentile_75 <- quantile(combined_results_df_overall[[measure]], 0.75, na.rm = TRUE)
+  min_value <- min(combined_results_df_overall[[measure]], na.rm = TRUE)
+  max_value <- max(combined_results_df_overall[[measure]], na.rm = TRUE)
+  
+  # Store the results in a list
+  result_list[[measure]] <- data.frame(
+    Performance_measure = measure,
+    Mean = mean_value,
+    SD = std_dev,
+    Median = median_value,
+    IQR = iqr_value,
+    Percentile_25 = percentile_25,
+    Percentile_75 = percentile_75,
+    Minimum = min_value,
+    Maximum = max_value
+  )
+}
+
+
+
+# Combine results into a single data frame
+(combined_descriptive_results <- do.call(rbind, result_list))
+
+
+
+
+# round the descriptive values. 
+
+
+# Round the values in the combined_results data frame to four decimal places
+library(dplyr)
+
+combined_descriptive_results <- combined_descriptive_results %>%
+  mutate(Mean = round(Mean, 4),
+    SD = round(SD, 4),
+    Median = round(Median, 4),
+    IQR = round(IQR, 4),
+    Percentile_25 = round(Percentile_25, 4),
+    Percentile_75 = round(Percentile_75, 4),
+    Minimum = round(Minimum, 4),
+    Maximum = round(Maximum, 4))
+
+combined_descriptive_results
+
+colnames(combined_descriptive_results)
+
+write.xlsx(combined_descriptive_results,"combined_descriptive_results.xlsx")
+
+```
+
+
+
+
+then export this for use in word:
+
+```{r}
+
+doc_overall <- read_docx() #create an empty word doc
+ft_overall <- flextable(combined_descriptive_results) #table from data
+ft_overall <- flextable::set_table_properties(ft_overall, width = .75) #set any random formatting. We did most in word.
+
+(doc_overall <- doc_overall %>%
+  body_add_flextable(ft_overall) %>%
+  body_add_par("Table X: Mean of Performance Measures Across Simulation Conditions", style = "Normal"))
+
+# Save the Word document
+print(doc_overall, target = "0_combined_descriptive_results.docx")
+```
+
+# 3. INCONSISTENCY RATIO
+
+## 3.1. create dataframe with only the relevant columns
+
+```{r inconsistency dataframe prior to analysis}
+
+inconsistency_df <- final_results_df[c("k_ab_bc", "k_ac", "j_cases", "Ratio_Inconsistent")] #make dataframe for the ANOVA of inconsistency, keeping only the relevant columns
+
+str(inconsistency_df)
+is.na(inconsistency_df)
+
+write.xlsx(inconsistency_df, "0_inconsistency_df.xlsx") # Writing the data frame to an Excel file
+```
+
+
+## 3.2. ANOVA - all main and second order interaction predictors
+
+
+As discussed in our previous email, I included the interaction between k_ab_bc and k_ac, given the nested grouping of my simulations conditions.
+
+```{r Type IANOVA 1 all effects}
+
+
+# Perform ANOVA
+anova_inconsistency <- aov(Ratio_Inconsistent ~ j_cases + k_ac + k_ab_bc + k_ac:k_ab_bc + k_ac:j_cases + k_ab_bc:j_cases, data = inconsistency_df)
+
+# Get summary of ANOVA
+(summary_anova_inconsistency <- summary(anova_inconsistency))
+# Calculate omega squared
+omegasq_inconsistency <- omega_squared(anova_inconsistency, partial = FALSE)
+
+# Create a data frame with omega squared values
+(omega_inconsistency_df <- as.data.frame(omegasq_inconsistency))
+
+# store in excel and word files for later use
+
+write.xlsx(omega_inconsistency_df, "0_anova_omega_inconsistency.xlsx") #omega squared values to Excel
+
+capture.output(summary_anova_inconsistency,file="0_inconsistency_anova.doc") 
+
+```
+
+
+## 3.2. summary statistics
+
+
+#### a) k_ac studies and the inconsistency ratio
+
+From the summary statistics, it also seems that as the number of AC studies increases, the inconsistency ratio also increases. However, like the summary statistics of the number of AB and BC studies, I do not know whether to report the median or mean in my results of Chapter 4.
+
+```{r summary statistics of inconsistency ratio group by number of k_ac studies}
+(summary_k_ac <- inconsistency_df_plots%>% group_by(k_ac) %>% 
+    summarise(Count = n(), Mean = mean(Ratio_Inconsistent), 
+              SD = sd(Ratio_Inconsistent), 
+              Median = median(Ratio_Inconsistent),
+              Min = min(Ratio_Inconsistent),
+              Max = max(Ratio_Inconsistent)))
+```
+
+
+## 3.4. Plots
+
+```{r boxplot k_ac and inconsistency ratio}
+# Create a boxplot for k_ac with median values
+
+boxplot_inconsistency_k_ac_main_effect <- ggplot(inconsistency_df_plots, aes(x = factor(k_ac), y = Ratio_Inconsistent, fill = factor(k_ac))) +
+    geom_boxplot() +
+    scale_fill_manual(values = cbPalette_light)  +
+    geom_hline(yintercept = 0.05, color = "#D55E00", linetype = "dashed", size = 1) +
+    theme_minimal() +
+    labs(x = "Number of AC studies",
+         y = "Inconsistency Ratio") +
+    scale_y_continuous(breaks = seq(0, max(inconsistency_df_plots$Ratio_Inconsistent, na.rm = TRUE), by = 0.05)) +
+    theme(text = element_text(size = 11),
+          legend.position = "none",
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.background = element_rect(fill = "white", colour = "white"),
+          axis.line = element_line(colour = "black"),
+          axis.ticks = element_line(colour = "black")) +
+    stat_summary(fun = median, geom = "text", aes(label = sprintf("%.4f", ..y..)), 
+                 vjust = -6.5, color = "black", size = 3.45)
+
+boxplot_inconsistency_k_ac_main_effect
+
+
+ggsave("0_boxplot_inconsistency_k_ac_main_effect.png",
+       plot = boxplot_inconsistency_k_ac_main_effect,
+       width = 6,   # Width in inches for A4 portrait (210 mm)
+       height = 4,  # Height in inches (one-third of A4 height, approximately 98.9 mm)
+       units = "in",  # Units of measurement
+       dpi = 600)     # Resolution (adjust as needed
+
+
+
+```
+
+
+
+
+
+# 4. Power of B
+
+## 4.1. extract relevent columns 
+
+
+
+
+
+```{r inconsistency dataframe prior to analysis}
+
+power_B_df <- final_results_df[c("k_ab_bc", "k_ac", "j_cases", "Power_B")] #make dataframe for the ANOVA of inconsistency, keeping only the relevant columns
+str(final_results_df)
+str(power_B_df)
+write.xlsx(power_B_df, "0_Power_B.xlsx") # Writing the data frame to an Excel file
+```
+
+
+
+
+
+## 4.2.ANOVA 
+
+```{r}
+# Perform ANOVA
+
+anova_power_b <- aov(Power_B ~ j_cases + k_ac + k_ab_bc + k_ac:k_ab_bc + k_ac:j_cases + k_ab_bc:j_cases, data = power_B_df)
+
+# Get summary of ANOVA
+(summary_anova_power_b<- summary(anova_power_b))
+
+
+# Calculate omega squared
+(omegasq_power_b <- omega_squared(anova_power_b, partial = F))
+
+    # Create a data frame with omega squared values
+    omegasq_power_b_df <- as.data.frame(omegasq_power_b)
+
+
+# store in excel and word files for later use
+
+write.xlsx(omegasq_power_b_df, "0_omegasq_power_b_df.xlsx") #omega squared values to Excel
+
+capture.output(summary_anova_power_b,file="0_summary_anova_power_b.doc") 
+
+```
+
+## 4.3. summary statistics
+
+### a) k_ab_bc studies and power of intervention b's estimate
+
+```{r summary statistics of inconsistency ratio and number of k_ab_bc studies}
+(summary_k_ab_bc_power_b <- power_B_df %>%
+    group_by(k_ab_bc) %>% 
+    summarise(
+        Count = n(),
+        Mean = mean(Power_B, na.rm = TRUE),
+        SD = sd(Power_B, na.rm = TRUE),
+        Median = median(Power_B, na.rm = TRUE),
+        IQR_Value = IQR(Power_B, na.rm = TRUE),
+        Percentile_25 = quantile(Power_B, 0.25, na.rm = TRUE),
+        Percentile_75 = quantile(Power_B, 0.75, na.rm = TRUE),
+        Min = min(Power_B, na.rm = TRUE),
+        Max = max(Power_B, na.rm = TRUE)
+    ))
+
+summary_k_ab_bc_power_b
+```
+
+
+
+### b) k_ac studies
+
+
+```{r summary statistics of inconsistency ratio group by number of k_ac studies}
+(summary_k_ac_power_b <- power_B_df %>%
+    group_by(k_ac) %>% 
+    summarise(
+        Count = n(),
+        Mean = mean(Power_B, na.rm = TRUE),
+        SD = sd(Power_B, na.rm = TRUE),
+        Median = median(Power_B, na.rm = TRUE),
+        IQR_Value = IQR(Power_B, na.rm = TRUE),
+        Percentile_25 = quantile(Power_B, 0.25, na.rm = TRUE),
+        Percentile_75 = quantile(Power_B, 0.75, na.rm = TRUE),
+        Min = min(Power_B, na.rm = TRUE),
+        Max = max(Power_B, na.rm = TRUE)
+    ))
+
+
+write.xlsx(summary_k_ac_power_b,"0_summary_k_ac_power_b.xlsx")
+```
+
+
+### c) number j cases and power
+
+```{r summary statistics of inconsistency grouped by j_cases}
+(summary_j_power_b <- power_B_df %>%
+    group_by(j_cases) %>% 
+    summarise(
+        Count = n(),
+        Mean = mean(Power_B, na.rm = TRUE),
+        SD = sd(Power_B, na.rm = TRUE),
+        Median = median(Power_B, na.rm = TRUE),
+        IQR_Value = IQR(Power_B, na.rm = TRUE),
+        Percentile_25 = quantile(Power_B, 0.25, na.rm = TRUE),
+        Percentile_75 = quantile(Power_B, 0.75, na.rm = TRUE),
+        Min = min(Power_B, na.rm = TRUE),
+        Max = max(Power_B, na.rm = TRUE)
+    ))
+
+
+write.xlsx(summary_j_power_b,"0_summary_j_power_b.xlsx")
+```
+
+
+
+
+## 4.4. Plots
+
+### a) AB and BC studies:
+
+```{r boxplot power and  k_ab_bc}
+
+
+
+random_colours<-sample(cbPalette_light,3)
+
+
+
+boxplot_power_b_k_ab_bc_main_effect <- ggplot(power_b_df_plots, aes(x = factor(k_ab_bc), y = Power_B, fill = factor(k_ab_bc))) +
+    geom_boxplot() +
+    scale_fill_manual(values = random_colours) +
+    theme_minimal() +
+    labs(x = "Number of AB or BC Studies",
+         y = "Power B") +
+    scale_y_continuous(breaks = seq(.9, max(power_b_df_plots$Power_B, na.rm = TRUE), by = 0.05)) +
+    theme(text = element_text(size = 11),
+          legend.position = "none",
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.background = element_rect(fill = "white", colour = "white"),
+          axis.line = element_line(colour = "black"),
+          axis.ticks = element_line(colour = "black")) +
+    stat_summary(fun = median, geom = "text", aes(label = sprintf("%.4f", ..y..)), 
+                 vjust = +4, color = "black", size = 3.40)
+
+
+
+boxplot_power_b_k_ab_bc_main_effect <- ggplot(power_b_df_plots, aes(x = factor(k_ab_bc), y = Power_B, fill = factor(k_ab_bc))) +
+    geom_boxplot() +
+    scale_fill_manual(values = random_colours) +
+    geom_hline(yintercept = 0.8, color = "#D55E00", linetype = "dashed", size = 1) +  # Horizontal line at y = 0.8
+    theme_minimal() +
+    labs(x = "Number of AB or BC Studies",
+         y = "Power B") +
+    scale_y_continuous(breaks = seq(0.6, 1, by = 0.05), limits = c(0.6, 1)) +  # Adjust y-axis scale
+    theme(text = element_text(size = 11),
+          legend.position = "none",
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.background = element_rect(fill = "white", colour = "white"),
+          axis.line = element_line(colour = "black"),
+          axis.ticks = element_line(colour = "black")) +
+    stat_summary(fun = median, geom = "text", aes(label = sprintf("%.4f", ..y..)), 
+                 vjust = +3, color = "black", size = 3.40)
+
+boxplot_power_b_k_ab_bc_main_effect
+
+
+ggsave("01_boxplot_power_k_ab_bc_main_effect.png",
+       plot = boxplot_power_b_k_ab_bc_main_effect,
+       width = 6,   # Width in inches for A4 portrait (210 mm)
+       height = 4,  # Height in inches (one-third of A4 height, approximately 98.9 mm)
+       units = "in",  # Units of measurement
+       dpi = 600)     # Resolution (adjust as needed
+
+```
+
+### b) j_cases
+
+```{r power and j cases}
+random_colours<-sample(cbPalette_max,3)
+
+
+boxplot_power_b_j_cases_main_effect <- ggplot(power_b_df_plots, aes(x = factor(j_cases), y = Power_B, fill = factor(j_cases))) +
+    geom_boxplot() +
+    scale_fill_manual(values = random_colours)  +
+    geom_hline(yintercept = 0.8, color = "#D55E00", linetype = "dashed", size = 1) +
+    theme_minimal() +
+    labs(x = "Number of Cases per Study",
+         y = "Power B") +
+    scale_y_continuous(breaks = seq(0, max(power_b_df_plots$Power_B, na.rm = TRUE), by = 0.05)) +
+    theme(text = element_text(size = 12),
+          legend.position = "none",
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.background = element_rect(fill = "white", colour = "white"),
+          axis.line = element_line(colour = "black"),
+          axis.ticks = element_line(colour = "black")) +
+    stat_summary(fun = median, geom = "text", aes(label = sprintf("%.4f", ..y..)), 
+                 vjust = -.6, color = "black", size = 3.40)
+
+boxplot_power_b_j_cases_main_effect
+
+
+ggsave("01_boxplot_power_j_cases_main_effect.png",
+       plot = boxplot_power_b_j_cases_main_effect,
+       width = 6,   # Width in inches for A4 portrait (210 mm)
+       height = 4,  # Height in inches (one-third of A4 height, approximately 98.9 mm)
+       units = "in",  # Units of measurement
+       dpi = 600)     # Resolution (adjust as needed
+
+
+
+```
+
+### c) AC studies
+```{r}
+random_colours<-sample(cbPalette_max,8)
+
+
+boxplot_power_b_AC_main_effect <- ggplot(power_b_df_plots, aes(x = factor(k_ac), y = Power_B, fill = factor(k_ac))) +
+    geom_boxplot() +
+    scale_fill_manual(values = random_colours)  +
+    geom_hline(yintercept = 0.8, color = "#D55E00", linetype = "dashed", size = 1) +
+    theme_minimal() +
+    labs(x = "Number of AC Studies",
+         y = "Power B") +
+    scale_y_continuous(breaks = seq(0, max(power_b_df_plots$Power_B, na.rm = TRUE), by = 0.05)) +
+    theme(text = element_text(size = 12),
+          legend.position = "none",
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.background = element_rect(fill = "white", colour = "white"),
+          axis.line = element_line(colour = "black"),
+          axis.ticks = element_line(colour = "black")) +
+    stat_summary(fun = median, geom = "text", aes(label = sprintf("%.4f", ..y..)), 
+                 vjust = +4, color = "black", size = 3.40)
+
+boxplot_power_b_AC_main_effect
+
+
+ggsave("0boxplot_power_AC_cases_main_effect.png",
+       plot =boxplot_power_b_AC_main_effect,
+       width = 6,   
+       height = 4,  
+       units = "in",  
+       dpi = 600)     
+
+
+
+```
+
+# 5. POWER C
+
+
+## 5.1. overall power values across all simulation conditions 
+
+```{r}
+library(dplyr)
+
+class(power_c_df_plots)
+
+
+power_c_df_plots_arranged<-power_c_df_plots %>% arrange(k_ab_bc)
+
+#function to 3 decimals:
+
+format_3_dec<-function(x)formatC(x,format="f",digits=3)
+power_c_df_plots
+
+power_c_df_plots<-
+summary_power_c_values<-nice_table(
+  power_c_df_plots) %>% 
+  set_formatter(
+    k_ab_bc=format_3_dec,
+    k_ac=format_3_dec,
+    j_cases=format_3_dec,
+    Power_C=format_3_dec
+  )
+
+print(summary_power_c_values,preview="docx")
+
+
+```
+
+
+## 5.1. extract relevent columns 
+
+```{r inconsistency dataframe prior to analysis}
+
+power_C_df <- final_results_df[c("k_ab_bc", "k_ac", "j_cases", "Power_C")] #make dataframe for the ANOVA of inconsistency, keeping only the relevant columns
+str(power_C_df)
+is.na(power_C_df)
+write.xlsx(power_C_df, "0_Power_C.xlsx") # Writing the data frame to an Excel file
+```
+
+
+## 5.2.ANOVA 
+
+```{r}
+# Perform ANOVA
+
+anova_power_c <- aov(Power_C ~ j_cases + k_ac + k_ab_bc + k_ac:k_ab_bc + k_ac:j_cases + k_ab_bc:j_cases, data = power_C_df)
+
+
+
+# Get summary of ANOVA
+
+(summary_anova_power_c<- summary(anova_power_c))
+
+
+# Calculate omega squared
+(omegasq_power_c <- omega_squared(anova_power_c, partial = F))
+
+    # Create a data frame with omega squared values
+    omegasq_power_c_df <- as.data.frame(omegasq_power_c)
+
+
+# store in excel and word files for later use
+
+write.xlsx(omegasq_power_c_df, "0_omegasq_power_c_df.xlsx") #omega squared values to Excel
+
+capture.output(summary_anova_power_c,file="0_summary_anova_power_c.doc") 
+```
+
+## 5.3. plot 
+```{r}
+random_colours<-sample(cbPalette_light,3)
+
+
+power_c_df_plots_arranged
+
+boxplot_power_c_k_ab_bc<- ggplot(power_c_df_plots_arranged, aes(x = factor(k_ab_bc), y = Power_C, fill = factor(k_ab_bc))) +
+    geom_boxplot() +
+    scale_fill_manual(values = random_colours)+
+    theme_minimal() +
+    labs(x = "Number of AB or BC Studies",
+         y = "Power C") +
+    scale_y_continuous(breaks = seq(0.9, max(power_c_df_plots_arranged$Power_C, na.rm = TRUE), by = 0.05)) +
+    theme(text = element_text(size = 11),
+          legend.position = "none",
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.background = element_rect(fill = "white", colour = "white"),
+          axis.line = element_line(colour = "black"),
+          axis.ticks = element_line(colour = "black")) +
+    stat_summary(fun = median, geom = "text", aes(label = sprintf("%.4f", ..y..)), 
+                 vjust = +3, color = "black", size = 3.40)
+
+boxplot_power_c_k_ab_bc
+
+
+ggsave("0_boxplot_power_c_k_ab_bc.png",
+       plot = boxplot_power_c_k_ab_bc,
+       width = 6,   # Width in inches for A4 portrait (210 mm)
+       height = 4,  # Height in inches (one-third of A4 height, approximately 98.9 mm)
+       units = "in",  # Units of measurement
+       dpi = 1200)     # Resolution (adjust as needed
+```
+
+
+## 5.4. summary statistics
+
+```{r}
+
+(summary_k_ab_bc_power_c <- power_C_df %>%
+    group_by(k_ab_bc) %>% 
+    summarise(
+        Count = n(),
+        Mean = mean(Power_C, na.rm = TRUE),
+        SD = sd(Power_C, na.rm = TRUE),
+        Median = median(Power_C, na.rm = TRUE),
+        IQR_Value = IQR(Power_C, na.rm = TRUE),
+        Percentile_25 = quantile(Power_C, 0.25, na.rm = TRUE),
+        Percentile_75 = quantile(Power_C, 0.75, na.rm = TRUE),
+        Min = min(Power_C, na.rm = TRUE),
+        Max = max(Power_C, na.rm = TRUE)
+    ))
+
+summary_k_ab_bc_power_c
+
+min(type_i_error_b_df_plots$Type1_Error_B)
+max(type_i_error_b_df_plots$Type1_Error_B)
+
+```
+
+# 6. type I error B
+
+
+## 6.1. overall type I error values across all simulation conditions 
+
+```{r}
+library(dplyr)
+library(flextable)
+library(rempsyc)
+
+type_i_error_b_df_plots_arranged<- type_i_error_b_df_plots %>% arrange(k_ac)
+colnames(type_i_error_b_df_plots_arranged)
+#function to 3 decimals:
+
+format_3_dec<-function(x)formatC(x,format="f",digits=4)
+
+?set_formatter()
+type_i_error_b_df_plots_arranged<-
+summary_typeIerror_b_values<-nice_table(
+  type_i_error_b_df_plots_arranged) %>% 
+  set_formatter(
+    k_ab_bc=format_3_dec,
+    k_ac=format_3_dec,
+    j_cases=format_3_dec,
+    Type1_Error_B=format_3_dec
+  )
+mean(type_i_error_b_df_plots_arranged$Type1_Error_B)
+median(type_i_error_b_df_plots$Type1_Error_B)
+print(summary_power_c_values,preview="docx")
+
+
+```
+
+
+## 6.1. extract relevent columns 
+
+```{r inconsistency dataframe prior to analysis}
+
+type_i_error_b_df <- final_results_df[c("k_ab_bc", "k_ac", "j_cases", "Type1_Error_B")] #make dataframe for the ANOVA of inconsistency, keeping only the relevant columns
+colnames(final_results_df)
+str(type_i_error_b_df)
+is.na(type_i_error_b_df)
+write.xlsx(type_i_error_b_df, "0_type_i_error_b_df.xlsx") # Writing the data frame to an Excel file
+```
+
+
+## 6.2.ANOVA 
+
+```{r}
+# Perform ANOVA
+
+anova_type_i_error_b <- aov(Type1_Error_B ~ j_cases + k_ac + k_ab_bc + k_ac:k_ab_bc + k_ac:j_cases + k_ab_bc:j_cases, data =type_i_error_b_df)
+
+
+
+# Get summary of ANOVA
+
+(summary_anova_type_i_error_b<- summary(anova_type_i_error_b))
+
+oms
+# Calculate omega squared
+(omegasq_type_i_error_b <- omega_squared(anova_type_i_error_b, partial = F))
+
+    # Create a data frame with omega squared values
+    omegasq_type_i_error_b <- as.data.frame(omegasq_type_i_error_b)
+
+
+# store in excel and word files for later use
+
+write.xlsx(omegasq_type_i_error_b, "0_omegasq_type_i_error_b.xlsx") #omega squared values to Excel
+
+capture.output(summary_anova_type_i_error_b,file="summary_anova_type_i_error_b.doc") 
+```
+
+## 6.3. plot 
+```{r}
+random_colours<-sample(cbPalette_light,8)
+
+
+boxplot_typeIerror_b_k_ac <- ggplot(type_i_error_b_df_plots, aes(x = factor(k_ac), y = Type1_Error_B, fill = factor(k_ac))) +
+    geom_boxplot() +
+    scale_fill_manual(values = random_colours) +
+    geom_hline(yintercept = 0.05, color = "#D55E00", linetype = "dashed", linewidth = 1) +  # Updated to 'linewidth'
+    theme_minimal() +
+    labs(x = "Number of AC Studies", y = "Type I Error of B") +
+    scale_y_continuous(breaks = seq(0.03, 0.075, by = 0.005), 
+                       limits = c(0.03, 0.075)) +
+    theme(text = element_text(size = 11),
+          legend.position = "none",
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.background = element_rect(fill = "white", colour = "white"),
+          axis.line = element_line(colour = "black"),
+          axis.ticks = element_line(colour = "black")) +
+    stat_summary(fun = median, geom = "text", aes(label = sprintf("%.4f", ..y..)), 
+                 vjust = -5.5, color = "black", size = 3.5)
+
+
+boxplot_typeIerror_b_k_ac
+
+
+
+ggsave("01_boxplot_typeIerror_b_k_ac.png",
+       plot = boxplot_typeIerror_b_k_ac,
+       width = 6,   # Width in inches for A4 portrait (210 mm)
+       height = 4,  # Height in inches (one-third of A4 height, approximately 98.9 mm)
+       units = "in",  # Units of measurement
+       dpi = 900)     # Resolution (adjust as needed
+```
+
+
+## 6.4. summary statistics
+
+```{r}
+colnames(type_i_error_b_df_plots)
+(summary_type_i_error_b <- type_i_error_b_df_plots %>%
+    group_by(k_ac) %>% 
+    summarise(
+        Count = n(),
+        Mean = mean(Type1_Error_B, na.rm = TRUE),
+        SD = sd(Type1_Error_B, na.rm = TRUE),
+        Median = median(Type1_Error_B, na.rm = TRUE),
+        IQR_Value = IQR(Type1_Error_B, na.rm = TRUE),
+        Percentile_25 = quantile(Type1_Error_B, 0.25, na.rm = TRUE),
+        Percentile_75 = quantile(Type1_Error_B, 0.75, na.rm = TRUE),
+        Min = min(Type1_Error_B, na.rm = TRUE),
+        Max = max(Type1_Error_B, na.rm = TRUE)
+    ))
+
+write.xlsx(summary_type_i_error_b,"summary_type_i_error_b.xlsx")
+
+
+# make a summary of only k_ac levels of 1, 5, and 10.
+
+summary_typeIerror_b_selected_k_ac_1_5_10 <- type_i_error_b_df_plots %>%
+    filter(k_ac %in% c(1, 5, 10)) %>%
+    group_by(k_ac) %>%
+    summarise(
+        Count = n(),
+        Mean = round(mean(Type1_Error_B, na.rm = TRUE),4),
+        SD = round(sd(Type1_Error_B, na.rm = TRUE),4),
+        Median = round(median(Type1_Error_B, na.rm = TRUE),4),
+        IQR_Value = round(IQR(Type1_Error_B, na.rm = TRUE),4),
+        Percentile_25 = round(quantile(Type1_Error_B, 0.25, na.rm = TRUE),4),
+        Percentile_75 = round(quantile(Type1_Error_B, 0.75, na.rm = TRUE),4),
+        Min = round(min(Type1_Error_B, na.rm = TRUE),4),
+        Max = round(max(Type1_Error_B, na.rm = TRUE),4))
+
+summary_typeIerror_b_selected_k_ac_1_5_10
+
+
+
+summary_typeIerror_b_selected_k_ac_15_20_25_30 <- type_i_error_b_df_plots %>%
+    filter(k_ac %in% c(15, 20, 25,30)) %>%
+    group_by(k_ac) %>%
+    summarise(
+        Count = n(),
+        Mean = round(mean(Type1_Error_B, na.rm = TRUE),4),
+        SD = round(sd(Type1_Error_B, na.rm = TRUE),4),
+        Median = round(median(Type1_Error_B, na.rm = TRUE),4),
+        IQR_Value = round(IQR(Type1_Error_B, na.rm = TRUE),4),
+        Percentile_25 = round(quantile(Type1_Error_B, 0.25, na.rm = TRUE),4),
+        Percentile_75 = round(quantile(Type1_Error_B, 0.75, na.rm = TRUE),4),
+        Min = round(min(Type1_Error_B, na.rm = TRUE),4),
+        Max = round(max(Type1_Error_B, na.rm = TRUE),4))
+
+summary_typeIerror_b_selected_k_ac_15_20_25_30
+```
+
+
+
+# 7. Type I error C
+
+
+
+## 7.1. overall type I error values across all simulation conditions 
+```{r}
+type_i_error_c_df_plots_arranged<- type_i_error_c_df_plots %>% arrange(k_ac)
+
+View(type_i_error_c_df_plots_arranged)
+colnames(type_i_error_c_df_plots_arranged)
+#function to 3 decimals:
+
+format_3_dec<-function(x)formatC(x,format="f",digits=4)
+
+?set_formatter()
+type_i_error_c_df_plots_arranged<-
+summary_typeIerror_c_values<-nice_table(
+  type_i_error_c_df_plots_arranged) %>% 
+  set_formatter(
+    k_ab_bc=format_3_dec,
+    k_ac=format_3_dec,
+    j_cases=format_3_dec,
+    Type1_Error_C=format_3_dec
+  )
+
+print(summary_power_c_values,preview="docx")
+```
+
+
+## 7.2. extract relevent columns 
+
+```{r inconsistency dataframe prior to analysis}
+
+type_i_error_c_df <- final_results_df[c("k_ab_bc", "k_ac", "j_cases", "Type1_Error_C")] #make dataframe for the ANOVA of inconsistency, keeping only the relevant columns
+colnames(final_results_df)
+str(type_i_error_c_df)
+is.na(type_i_error_c_df)
+write.xlsx(type_i_error_c_df, "0_type_i_error_c_df.xlsx") # Writing the data frame to an Excel file
+```
+
+
+## 7.3.ANOVA 
+
+```{r}
+# Perform ANOVA
+
+anova_type_i_error_c <- aov(Type1_Error_C ~ j_cases + k_ac + k_ab_bc + k_ac:k_ab_bc + k_ac:j_cases + k_ab_bc:j_cases, data =type_i_error_c_df)
+
+
+
+# Get summary of ANOVA
+
+(summary_anova_type_i_error_c<- summary(anova_type_i_error_c))
+
+
+# Calculate omega squared
+(omegasq_type_i_error_c <- omega_squared(anova_type_i_error_c, partial = F))
+
+    # Create a data frame with omega squared values
+    omegasq_type_i_error_c <- as.data.frame(omegasq_type_i_error_c)
+
+
+# store in excel and word files for later use
+
+write.xlsx(omegasq_type_i_error_c, "0_omegasq_type_i_error_c.xlsx") #omega squared values to Excel
+
+
+capture.output(summary_anova_type_i_error_c,file="summary_anova_type_i_error_c.doc") 
+```
+
+## 7.4. plot 
+```{r}
+plot_t1_e_c_palette<- c("#E0FFFF","#FCCDE5","#FFFFE0","#98FB98","#FFA07A","#87CEFA","#F0E442","#E6E6FA","#FB9A99")
+
+  
+
+
+boxplot_typeIerror_c_k_ac <- ggplot(type_i_error_c_df_plots, aes(x = factor(k_ac), y = Type1_Error_C, fill = factor(k_ac))) +
+    geom_boxplot() +
+    scale_fill_manual(values = plot_t1_e_c_palette) +
+    geom_hline(yintercept = 0.05, color = "#D55E00", linetype = "dashed", linewidth = 1) +  
+    theme_minimal() +
+    labs(x = "Number of AC Studies", y = "Type I Error of C") +
+    scale_y_continuous(breaks = seq(0.010, 0.06, by = 0.005), 
+                       limits = c(0.010, 0.06)) +
+    theme(text = element_text(size = 11),
+          legend.position = "none",
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.background = element_rect(fill = "white", colour = "white"),
+          axis.line = element_line(colour = "black"),
+          axis.ticks = element_line(colour = "black")) +
+    stat_summary(fun = median, geom = "text", aes(label = sprintf("%.4f", ..y..)), 
+                 vjust = -7, color = "black", size = 3.40)
+
+boxplot_typeIerror_c_k_ac
+
+
+ggsave("00_type_i_error_c_k_ab_bc.png",
+       plot = boxplot_typeIerror_c_k_ac,
+       width = 6,   # Width in inches for A4 portrait (210 mm)
+       height = 4,  # Height in inches (one-third of A4 height, approximately 98.9 mm)
+       units = "in",  # Units of measurement
+       dpi = 1200)     # Resolution (adjust as needed
+```
+
+
+
+## 7.5. descriptive statistics
+```{r}
+(summary_type_i_error_c <- type_i_error_c_df_plots %>%
+    group_by(k_ac) %>% 
+    summarise(
+        Count = n(),
+        Mean = mean(Type1_Error_C, na.rm = TRUE),
+        SD = sd(Type1_Error_C, na.rm = TRUE),
+        Median = median(Type1_Error_C, na.rm = TRUE),
+        IQR_Value = IQR(Type1_Error_C, na.rm = TRUE),
+        Percentile_25 = quantile(Type1_Error_C, 0.25, na.rm = TRUE),
+        Percentile_75 = quantile(Type1_Error_C, 0.75, na.rm = TRUE),
+        Min = min(Type1_Error_C, na.rm = TRUE),
+        Max = max(Type1_Error_C, na.rm = TRUE)
+    ))
+
+
+```
+
+
+
+# 8. Bias 
+
+## 8.1. Relative Bias B
+
+
+### a) overall B relative bias values across every simulation
+
+```{r}
+
+# first I want to isolate the data that I will use for the ANOVA 
+
+str(final_results_df) #check if my factors are still there
+    # THEY ARE, PHEW!!!! 
+
+
+relative_bias_b_df<- final_results_df %>% 
+  select(relative_bias_b,k_ab_bc,k_ac,j_cases) #isolate the variables of interest
+View(relative_bias_b_df) 
+
+
+library(dplyr)
+library(flextable)
+library(rempsyc)
+
+
+
+
+# quickly get an overall summary of the data in a table that I can use in my thesis / copy values into a table of my thesis
+
+relative_bias_b_df_plots_arranged<- relative_bias_b_df_plots %>% arrange(k_ab_bc)
+
+View(relative_bias_b_df_plots_arranged)
+#function to 3 decimals:
+colnames(relative_bias_b_df_plots_arranged)
+format_4_dec<-function(x)formatC(x,format="f",digits=4)
+
+?set_formatter()
+relative_bias_b_df_plots_arranged<-
+summary_relative_bias_b_values<-nice_table(
+  relative_bias_b_df_plots_arranged) %>% 
+  set_formatter(
+    k_ab_bc=format_4_dec,
+    k_ac=format_4_dec,
+    j_cases=format_4_dec,
+    relative_bias_b=format_4_dec,
+    rel_bias_b_cor=format_4_dec,
+    rel_bias_c=format_4_dec,
+    rel_bias_c_cor=format_4_dec
+  )
+
+print(relative_bias_b_df_plots_arranged,preview="docx")
+
+
+```
+
+###  b ANOVA 
+
+```{r}
+# Perform ANOVA
+# 
+
+ 
+str(relative_bias_b_df) #make double sure that the dataframe I am about to use, is indeed still containing the predefined factors necessary to do the ANOVA.
+
+is.na(relative_bias_b_df) #all values are there 
+
+
+anova_relative_bias_b <- aov(relative_bias_b ~ j_cases + k_ac + k_ab_bc + k_ac:k_ab_bc + k_ac:j_cases + k_ab_bc:j_cases, data =relative_bias_b_df)
+
+
+
+# Get summary of ANOVA
+
+(summary_anova_relative_bias_b<- summary(anova_relative_bias_b))
+
+
+# Calculate omega squared
+(omegasq_anova_relative_bias_b <- omega_squared(anova_relative_bias_b, partial = F))
+
+
+
+
+    # Create a data frame with omega squared values
+    omegasq_anova_relative_bias_b_df <- as.data.frame(omegasq_anova_relative_bias_b)
+
+
+# store in excel and word files for later use
+
+write.xlsx(omegasq_anova_relative_bias_b_df , "0_omegasq_anova_relative_bias_b.xlsx") #omega squared values to Excel
+
+capture.output(summary_anova_relative_bias_b,file="summary_anova_relative_bias_b.doc") 
+```
+
+
+
+## 8.2. summary statistics
+
+```{r}
+colnames(relative_bias_b_df_plots)
+(summary_relative_bias_b <- relative_bias_b_df_plots %>%
+    group_by(k_ac) %>% 
+    summarise(
+        Count = n(),
+        Mean = mean(relative_bias_b, na.rm = TRUE),
+        SD = sd(relative_bias_b, na.rm = TRUE),
+        Median = median(relative_bias_b, na.rm = TRUE),
+        IQR_Value = IQR(relative_bias_b, na.rm = TRUE),
+        Percentile_25 = quantile(relative_bias_b, 0.25, na.rm = TRUE),
+        Percentile_75 = quantile(relative_bias_b, 0.75, na.rm = TRUE),
+        Min = min(relative_bias_b, na.rm = TRUE),
+        Max = max(relative_bias_b, na.rm = TRUE)
+    ))
+
+summary_relative_bias_b
+
+```
+
+
+
+
+## 8.3. Corrected Relative Bias B
+
+
+
+### a) overall B relative bias values across every simulation
+
+```{r}
+
+# first I want to isolate the data that I will use for the ANOVA 
+
+str(final_results_df) #check if my factors are still there
+    # THEY ARE, PHEW!!!! 
+
+
+correct_relative_bias_b_df<- final_results_df %>% 
+  select(relative_bias_b_corrected,k_ab_bc,k_ac,j_cases) #isolate the variables of interest
+str(correct_relative_bias_b_df)
+View(correct_relative_bias_b_df) 
+
+
+library(dplyr)
+library(flextable)
+library(rempsyc)
+
+
+
+
+# quickly get an overall summary of the data in a table that I can use in my thesis / copy values into a table of my thesis
+
+corrected_relative_bias_b_df_plots_arranged<- relative_bias_b_corrected_plots %>% arrange(k_ab_bc)
+
+
+
+?set_formatter()
+relative_bias_b_corrected_df_plots_arranged<-
+summary_bias_b_correcte_values<-nice_table(
+  corrected_relative_bias_b_df_plots_arranged) %>% 
+  set_formatter(
+    k_ab_bc=format_4_dec,
+    k_ac=format_4_dec,
+    j_cases=format_4_dec,
+    relative_bias_b_corrected=format_4_dec
+  )
+colnames(corrected_relative_bias_b_df_plots_arranged)
+
+print(relative_bias_b_corrected_df_plots_arranged,preview="docx")
+
+
+```
+### summary values
+
+```{r}
+colnames(relative_bias_b_df_plots)
+(summary_relative_bias_b_cor <- relative_bias_b_df_plots %>%
+    group_by(k_ac) %>% 
+    summarise(
+        Count = n(),
+        Mean = mean(rel_bias_b_cor, na.rm = TRUE),
+        SD = sd(rel_bias_b_cor, na.rm = TRUE),
+        Median = median(rel_bias_b_cor, na.rm = TRUE),
+        IQR_Value = IQR(rel_bias_b_cor, na.rm = TRUE),
+        Percentile_25 = quantile(rel_bias_b_cor, 0.25, na.rm = TRUE),
+        Percentile_75 = quantile(rel_bias_b_cor, 0.75, na.rm = TRUE),
+        Min = min(rel_bias_b_cor, na.rm = TRUE),
+        Max = max(rel_bias_b_cor, na.rm = TRUE)
+    ))
+colnames(summary_relative_bias_b_cor)
+summary_relative_bias_b_cor <- summary_relative_bias_b_cor %>%
+  select(k_ac,Mean, SD, Median,IQR_Value)
+
+summary_relative_bias_b <- summary_relative_bias_b %>%
+  select(k_ac,Mean, SD, Median,IQR_Value)
+
+combined_bias_b_sumStat_df <- bind_rows(summary_relative_bias_b_cor, summary_relative_bias_b)
+
+summary_bias_b_overall<-write.xlsx(combined_bias_b_sumStat_df,"0_combined_bias_b_sumStat_df.xlsx")
+```
+
+
+###  b ANOVA 
+
+```{r}
+# Perform ANOVA
+# 
+
+
+str(correct_relative_bias_b_df) #make double sure that the dataframe I am about to use, is indeed still containing the predefined factors necessary to do the ANOVA.
+
+is.na(correct_relative_bias_b_df) #all values are there 
+
+colnames(correct_relative_bias_b_df)
+anova_relative_bias_b_corrected <- aov(relative_bias_b_corrected ~ j_cases + k_ac + k_ab_bc + k_ac:k_ab_bc + k_ac:j_cases + k_ab_bc:j_cases, data =correct_relative_bias_b_df)
+
+
+
+# Get summary of ANOVA
+
+(summary_anova_relative_bias_b_corrected<- summary(anova_relative_bias_b_corrected))
+
+
+
+summary_anova_relative_bias_b
+summary_anova_relative_bias_b_corrected
+
+# Calculate omega squared
+(omegasq_anova_relative_bias_b_corrected <- omega_squared(anova_relative_bias_b_corrected, partial = F))
+
+omegasq_anova_relative_bias_b
+omegasq_anova_relative_bias_b_corrected
+
+
+    # Create a data frame with omega squared values
+    omegasq_anova_relative_bias_b_corrected_df <- as.data.frame(omegasq_anova_relative_bias_b_corrected)
+
+
+# store in excel and word files for later use
+
+write.xlsx(omegasq_anova_relative_bias_b_corrected_df , "0_omegasq_anova_relative_bias_b.xlsx") #omega squared values to Excel
+
+capture.output(summary_anova_relative_bias_b_corrected,file="summary_anova_relative_bias_b.doc") 
+```
+
+## Combined plotting of corrected Bias B and corrected relative bias b 
+
+```{r}
+#create a plot with both
+
+
+
+str(relative_bias_b_df_plots)
+
+relative_bias_b_df_plots_only_b<-relative_bias_b_df_plots %>%
+  select(k_ac,relative_bias_b,rel_bias_b_cor)
+View(relative_bias_b_df_plots_only_b)
+
+long_bias_b_df<-relative_bias_b_df_plots_only_b %>%
+  pivot_longer(
+    cols=c(relative_bias_b,rel_bias_b_cor),
+    names_to= "bias_type",
+    values_to = "relative_bias"
+  ) 
+
+long_bias_b_df$bias_type <-  recode(long_bias_b_df$bias_type, 
+                            relative_bias_b = "Relative Bias",
+                            rel_bias_b_cor = "Corrected Relative Bias")
+
+library(tidyr)
+library(dplyr)
+
+# Reshape the data to long format
+long_bias_b_df <- relative_bias_b_df_plots_only_b %>%
+  pivot_longer(
+    cols = c(relative_bias_b, rel_bias_b_cor),
+    names_to = "bias_type",
+    values_to = "relative_bias"
+  ) %>%
+  mutate(bias_type = case_when(
+    bias_type == "relative_bias_b" ~ "Relative Bias",
+    bias_type == "rel_bias_b_cor" ~ "Corrected Relative Bias",
+    TRUE ~ bias_type  # Fallback to keep the original value if none of the above conditions are met
+  ))
+
+long_bias_b_df
+
+# Convert bias_type to a factor with two levels
+long_bias_b_df$bias_type <- factor(long_bias_b_df$bias_type, levels = c("Relative Bias", "Corrected Relative Bias"))
+
+# Now check the levels
+print(levels(long_bias_b_df$bias_type))
+
+# get min max value for y-axis plotting 
+
+min(relative_bias_b_df_plots_only_b$relative_bias_b)
+max(relative_bias_b_df_plots_only_b$relative_bias_b)
+min(relative_bias_b_df_plots_only_b$rel_bias_b_cor)
+max(relative_bias_b_df_plots_only_b$rel_bias_b_cor)
+random_colours<-sample(cbPalette_max,20)
+
+boxplot_relative_bias_b <- ggplot(long_bias_b_df, aes(x = factor(k_ac), y = relative_bias, fill = bias_type)) +
+  geom_boxplot(position = position_dodge(0.8)) +  
+  scale_fill_manual(values = c("Relative Bias" = "#FAFAD2", "Corrected Relative Bias" =  "#E0FFFF"))+
+  labs(x="Number of AC Studies", y="Relative Bias",fill="Bias Type") +
+  geom_hline(yintercept = 0.1, color = "#D55E00", linetype = "dashed", linewidth = 1) +
+  theme_minimal() +
+  scale_y_continuous(breaks = seq(-0.01, 0.45, by = 0.025), limits = c(-0.01, 0.45)) +
+  theme(
+    text = element_text(size = 12),
+    legend.position = "right",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_rect(fill = "white", colour = "white"),
+    axis.line = element_line(colour = "black"),
+    axis.ticks = element_line(colour = "black")
+  ) 
+
+boxplot_relative_bias_b
+
+
+ggsave("00_boxplot_relative_bias_b.png",
+       plot = boxplot_relative_bias_b,
+       width = 6,   
+       height = 4,  
+       units = "in",  
+       dpi = 1200)     
+
+# rel_bias_c<-relative_bias_c_df_plots$relative_bias_c
+# rel_bias_c_cor<-relative_bias_c_corrected_plots$relative_bias_c_corrected
+# 
+# relative_bias_b_df_plots$rel_bias_b_cor<-rel_bias_b_cor
+# relative_bias_b_df_plots$rel_bias_c<-rel_bias_c
+# relative_bias_b_df_plots$rel_bias_c_cor<-rel_bias_c_cor
+# 
+# 
+# View(relative_bias_b_df_plots) 
+# 
+# combined_bias_plots<-relative_bias_b_df_plots
+# colnames(combined_bias_plots)
+# "#619CFF"
+# 
+# write.xlsx(combined_bias_plots,"0_combined_bias_plots.xlsx")
+
+
+
+
+
+```
+
+
+# 8. Bias 
+
+## 8.1. Relative Bias c
+
+
+### a) overall B relative bias values across every simulation
+
+```{r}
+
+# first I want to isolate the data that I will use for the ANOVA 
+
+str(final_results_df) #check if my factors are still there
+    # THEY ARE, PHEW!!!! 
+
+
+relative_bias_b_df<- final_results_df %>% 
+  select(relative_bias_b,k_ab_bc,k_ac,j_cases) #isolate the variables of interest
+View(relative_bias_b_df) 
+
+
+library(dplyr)
+library(flextable)
+library(rempsyc)
+
+
+
+
+# quickly get an overall summary of the data in a table that I can use in my thesis / copy values into a table of my thesis
+
+relative_bias_b_df_plots_arranged<- relative_bias_b_df_plots %>% arrange(k_ab_bc)
+
+View(relative_bias_b_df_plots_arranged)
+#function to 3 decimals:
+colnames(relative_bias_b_df_plots_arranged)
+format_4_dec<-function(x)formatC(x,format="f",digits=4)
+
+?set_formatter()
+relative_bias_b_df_plots_arranged<-
+summary_relative_bias_b_values<-nice_table(
+  relative_bias_b_df_plots_arranged) %>% 
+  set_formatter(
+    k_ab_bc=format_4_dec,
+    k_ac=format_4_dec,
+    j_cases=format_4_dec,
+    relative_bias_b=format_4_dec,
+    rel_bias_b_cor=format_4_dec,
+    rel_bias_c=format_4_dec,
+    rel_bias_c_cor=format_4_dec
+  )
+
+print(relative_bias_b_df_plots_arranged,preview="docx")
+
+
+```
+
+###  b ANOVA 
+
+```{r}
+# Perform ANOVA
+# 
+
+ 
+str(relative_bias_b_df) #make double sure that the dataframe I am about to use, is indeed still containing the predefined factors necessary to do the ANOVA.
+
+is.na(relative_bias_b_df) #all values are there 
+
+
+anova_relative_bias_b <- aov(relative_bias_b ~ j_cases + k_ac + k_ab_bc + k_ac:k_ab_bc + k_ac:j_cases + k_ab_bc:j_cases, data =relative_bias_b_df)
+
+
+
+# Get summary of ANOVA
+
+(summary_anova_relative_bias_b<- summary(anova_relative_bias_b))
+
+
+# Calculate omega squared
+(omegasq_anova_relative_bias_b <- omega_squared(anova_relative_bias_b, partial = F))
+
+
+
+
+    # Create a data frame with omega squared values
+    omegasq_anova_relative_bias_b_df <- as.data.frame(omegasq_anova_relative_bias_b)
+
+
+# store in excel and word files for later use
+
+write.xlsx(omegasq_anova_relative_bias_b_df , "0_omegasq_anova_relative_bias_b.xlsx") #omega squared values to Excel
+
+capture.output(summary_anova_relative_bias_b,file="summary_anova_relative_bias_b.doc") 
+```
+
+
+
+## 6.4. summary statistics
+
+```{r}
+colnames(relative_bias_b_df_plots)
+(summary_relative_bias_b <- relative_bias_b_df_plots %>%
+    group_by(k_ac) %>% 
+    summarise(
+        Count = n(),
+        Mean = mean(relative_bias_b, na.rm = TRUE),
+        SD = sd(relative_bias_b, na.rm = TRUE),
+        Median = median(relative_bias_b, na.rm = TRUE),
+        IQR_Value = IQR(relative_bias_b, na.rm = TRUE),
+        Percentile_25 = quantile(relative_bias_b, 0.25, na.rm = TRUE),
+        Percentile_75 = quantile(relative_bias_b, 0.75, na.rm = TRUE),
+        Min = min(relative_bias_b, na.rm = TRUE),
+        Max = max(relative_bias_b, na.rm = TRUE)
+    ))
+
+summary_relative_bias_b
+
+
+# make a summary of only k_ac levels of 1, 5, and 10.
+
+summary_typeIerror_b_selected_k_ac_1_5_10 <- type_i_error_b_df_plots %>%
+    filter(k_ac %in% c(1, 5, 10)) %>%
+    group_by(k_ac) %>%
+    summarise(
+        Count = n(),
+        Mean = round(mean(Type1_Error_B, na.rm = TRUE),4),
+        SD = round(sd(Type1_Error_B, na.rm = TRUE),4),
+        Median = round(median(Type1_Error_B, na.rm = TRUE),4),
+        IQR_Value = round(IQR(Type1_Error_B, na.rm = TRUE),4),
+        Percentile_25 = round(quantile(Type1_Error_B, 0.25, na.rm = TRUE),4),
+        Percentile_75 = round(quantile(Type1_Error_B, 0.75, na.rm = TRUE),4),
+        Min = round(min(Type1_Error_B, na.rm = TRUE),4),
+        Max = round(max(Type1_Error_B, na.rm = TRUE),4))
+
+summary_typeIerror_b_selected_k_ac_1_5_10
+
+
+
+summary_typeIerror_b_selected_k_ac_15_20_25_30 <- type_i_error_b_df_plots %>%
+    filter(k_ac %in% c(15, 20, 25,30)) %>%
+    group_by(k_ac) %>%
+    summarise(
+        Count = n(),
+        Mean = round(mean(Type1_Error_B, na.rm = TRUE),4),
+        SD = round(sd(Type1_Error_B, na.rm = TRUE),4),
+        Median = round(median(Type1_Error_B, na.rm = TRUE),4),
+        IQR_Value = round(IQR(Type1_Error_B, na.rm = TRUE),4),
+        Percentile_25 = round(quantile(Type1_Error_B, 0.25, na.rm = TRUE),4),
+        Percentile_75 = round(quantile(Type1_Error_B, 0.75, na.rm = TRUE),4),
+        Min = round(min(Type1_Error_B, na.rm = TRUE),4),
+        Max = round(max(Type1_Error_B, na.rm = TRUE),4))
+
+summary_typeIerror_b_selected_k_ac_15_20_25_30
+```
+
+
+
+
+## 8.2. Corrected Relative Bias c
+
+
+
+### a) overall B relative bias values across every simulation
+
+```{r}
+
+# first I want to isolate the data that I will use for the ANOVA 
+
+str(final_results_df) #check if my factors are still there
+    # THEY ARE, PHEW!!!! 
+
+
+correct_relative_bias_b_df<- final_results_df %>% 
+  select(relative_bias_b_corrected,k_ab_bc,k_ac,j_cases) #isolate the variables of interest
+str(correct_relative_bias_b_df)
+View(correct_relative_bias_b_df) 
+
+
+library(dplyr)
+library(flextable)
+library(rempsyc)
+
+
+
+
+# quickly get an overall summary of the data in a table that I can use in my thesis / copy values into a table of my thesis
+
+corrected_relative_bias_b_df_plots_arranged<- relative_bias_b_corrected_plots %>% arrange(k_ab_bc)
+
+
+
+?set_formatter()
+relative_bias_b_corrected_df_plots_arranged<-
+summary_bias_b_correcte_values<-nice_table(
+  corrected_relative_bias_b_df_plots_arranged) %>% 
+  set_formatter(
+    k_ab_bc=format_4_dec,
+    k_ac=format_4_dec,
+    j_cases=format_4_dec,
+    relative_bias_b_corrected=format_4_dec
+  )
+colnames(corrected_relative_bias_b_df_plots_arranged)
+
+print(relative_bias_b_corrected_df_plots_arranged,preview="docx")
+
+
+```
+### summary values
+
+```{r}
+colnames(relative_bias_b_df_plots)
+(summary_relative_bias_b_cor <- relative_bias_b_df_plots %>%
+    group_by(k_ac) %>% 
+    summarise(
+        Count = n(),
+        Mean = mean(rel_bias_b_cor, na.rm = TRUE),
+        SD = sd(rel_bias_b_cor, na.rm = TRUE),
+        Median = median(rel_bias_b_cor, na.rm = TRUE),
+        IQR_Value = IQR(rel_bias_b_cor, na.rm = TRUE),
+        Percentile_25 = quantile(rel_bias_b_cor, 0.25, na.rm = TRUE),
+        Percentile_75 = quantile(rel_bias_b_cor, 0.75, na.rm = TRUE),
+        Min = min(rel_bias_b_cor, na.rm = TRUE),
+        Max = max(rel_bias_b_cor, na.rm = TRUE)
+    ))
+colnames(summary_relative_bias_b_cor)
+summary_relative_bias_b_cor <- summary_relative_bias_b_cor %>%
+  select(k_ac,Mean, SD, Median,IQR_Value)
+
+summary_relative_bias_b <- summary_relative_bias_b %>%
+  select(k_ac,Mean, SD, Median,IQR_Value)
+
+combined_bias_b_sumStat_df <- bind_rows(summary_relative_bias_b_cor, summary_relative_bias_b)
+
+summary_bias_b_overall<-write.xlsx(combined_bias_b_sumStat_df,"0_combined_bias_b_sumStat_df.xlsx")
+```
+
+
+###  b ANOVA 
+
+```{r}
+# Perform ANOVA
+# 
+
+
+str(correct_relative_bias_b_df) #make double sure that the dataframe I am about to use, is indeed still containing the predefined factors necessary to do the ANOVA.
+
+is.na(correct_relative_bias_b_df) #all values are there 
+
+colnames(correct_relative_bias_b_df)
+anova_relative_bias_b_corrected <- aov(relative_bias_b_corrected ~ j_cases + k_ac + k_ab_bc + k_ac:k_ab_bc + k_ac:j_cases + k_ab_bc:j_cases, data =correct_relative_bias_b_df)
+
+
+
+# Get summary of ANOVA
+
+(summary_anova_relative_bias_b_corrected<- summary(anova_relative_bias_b_corrected))
+
+
+
+summary_anova_relative_bias_b
+summary_anova_relative_bias_b_corrected
+
+# Calculate omega squared
+(omegasq_anova_relative_bias_b_corrected <- omega_squared(anova_relative_bias_b_corrected, partial = F))
+
+omegasq_anova_relative_bias_b
+omegasq_anova_relative_bias_b_corrected
+
+
+    # Create a data frame with omega squared values
+    omegasq_anova_relative_bias_b_corrected_df <- as.data.frame(omegasq_anova_relative_bias_b_corrected)
+
+
+# store in excel and word files for later use
+
+write.xlsx(omegasq_anova_relative_bias_b_corrected_df , "0_omegasq_anova_relative_bias_b.xlsx") #omega squared values to Excel
+
+capture.output(summary_anova_relative_bias_b_corrected,file="summary_anova_relative_bias_b.doc") 
+```
+
+## Combined plotting of corrected Bias B and corrected relative bias b 
+
+```{r}
+#create a plot with both
+
+
+
+str(relative_bias_b_df_plots)
+
+relative_bias_b_df_plots_only_b<-relative_bias_b_df_plots %>%
+  select(k_ac,relative_bias_b,rel_bias_b_cor)
+View(relative_bias_b_df_plots_only_b)
+
+long_bias_b_df<-relative_bias_b_df_plots_only_b %>%
+  pivot_longer(
+    cols=c(relative_bias_b,rel_bias_b_cor),
+    names_to= "bias_type",
+    values_to = "relative_bias"
+  ) 
+
+long_bias_b_df$bias_type <-  recode(long_bias_b_df$bias_type, 
+                            relative_bias_b = "Relative Bias",
+                            rel_bias_b_cor = "Corrected Relative Bias")
+
+library(tidyr)
+library(dplyr)
+
+# Reshape the data to long format
+long_bias_b_df <- relative_bias_b_df_plots_only_b %>%
+  pivot_longer(
+    cols = c(relative_bias_b, rel_bias_b_cor),
+    names_to = "bias_type",
+    values_to = "relative_bias"
+  ) %>%
+  mutate(bias_type = case_when(
+    bias_type == "relative_bias_b" ~ "Relative Bias",
+    bias_type == "rel_bias_b_cor" ~ "Corrected Relative Bias",
+    TRUE ~ bias_type  # Fallback to keep the original value if none of the above conditions are met
+  ))
+
+long_bias_b_df
+
+# Convert bias_type to a factor with two levels
+long_bias_b_df$bias_type <- factor(long_bias_b_df$bias_type, levels = c("Relative Bias", "Corrected Relative Bias"))
+
+# Now check the levels
+print(levels(long_bias_b_df$bias_type))
+
+# get min max value for y-axis plotting 
+
+min(relative_bias_b_df_plots_only_b$relative_bias_b)
+max(relative_bias_b_df_plots_only_b$relative_bias_b)
+min(relative_bias_b_df_plots_only_b$rel_bias_b_cor)
+max(relative_bias_b_df_plots_only_b$rel_bias_b_cor)
+random_colours<-sample(cbPalette_max,20)
+
+boxplot_relative_bias_b <- ggplot(long_bias_b_df, aes(x = factor(k_ac), y = relative_bias, fill = bias_type)) +
+  geom_boxplot(position = position_dodge(0.8)) +  
+  scale_fill_manual(values = c("Relative Bias" = "#FAFAD2", "Corrected Relative Bias" =  "#E0FFFF"))+
+  labs(x="Number of AC Studies", y="Relative Bias",fill="Bias Type") +
+  geom_hline(yintercept = 0.1, color = "#D55E00", linetype = "dashed", linewidth = 1) +
+  theme_minimal() +
+  scale_y_continuous(breaks = seq(-0.01, 0.45, by = 0.025), limits = c(-0.01, 0.45)) +
+  theme(
+    text = element_text(size = 12),
+    legend.position = "right",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_rect(fill = "white", colour = "white"),
+    axis.line = element_line(colour = "black"),
+    axis.ticks = element_line(colour = "black")
+  ) 
+
+boxplot_relative_bias_b
+
+
+ggsave("00_boxplot_relative_bias_b.png",
+       plot = boxplot_relative_bias_b,
+       width = 6,   
+       height = 4,  
+       units = "in",  
+       dpi = 1200)     
+
+# rel_bias_c<-relative_bias_c_df_plots$relative_bias_c
+# rel_bias_c_cor<-relative_bias_c_corrected_plots$relative_bias_c_corrected
+# 
+# relative_bias_b_df_plots$rel_bias_b_cor<-rel_bias_b_cor
+# relative_bias_b_df_plots$rel_bias_c<-rel_bias_c
+# relative_bias_b_df_plots$rel_bias_c_cor<-rel_bias_c_cor
+# 
+# 
+# View(relative_bias_b_df_plots) 
+# 
+# combined_bias_plots<-relative_bias_b_df_plots
+# colnames(combined_bias_plots)
+# "#619CFF"
+# 
+# write.xlsx(combined_bias_plots,"0_combined_bias_plots.xlsx")
+
+
+
+
+
+```
+
+
+
+
+
+## 8.3. Relative Bias C
+
+
+### a) overall B relative bias values across every simulation
+
+```{r}
+
+# first I want to isolate the data that I will use for the ANOVA 
+
+str(final_results_df) #check if my factors are still there
+    # THEY ARE, PHEW!!!! 
+
+
+relative_bias_c_df<- final_results_df %>% 
+  select(relative_bias_c,relative_bias_c_corrected,k_ab_bc,k_ac,j_cases) #isolate the variables of interest
+View(relative_bias_c_df) 
+
+write.xlsx(relative_bias_c_df,"0_relative_bias_c_df.xlsx")
+
+```
+
+###  b ANOVA 
+
+```{r}
+# Perform ANOVA
+# 
+
+ 
+str(relative_bias_c_df) #make double sure that the dataframe I am about to use, is indeed still containing the predefined factors necessary to do the ANOVA.
+
+is.na(relative_bias_b_df) #all values are there 
+
+
+anova_relative_bias_c <- aov(relative_bias_c ~ j_cases + k_ac + k_ab_bc + k_ac:k_ab_bc + k_ac:j_cases + k_ab_bc:j_cases, data =relative_bias_c_df)
+
+
+
+# Get summary of ANOVA
+
+(summary_anova_relative_bias_c<- summary(anova_relative_bias_c))
+
+
+# Calculate omega squared
+(omegasq_anova_relative_bias_c <- omega_squared(anova_relative_bias_c, partial = F))
+
+
+
+
+    # Create a data frame with omega squared values
+omegasq_anova_relative_bias_c_df <- as.data.frame(omegasq_anova_relative_bias_c)
+
+
+# store in excel and word files for later use
+
+write.xlsx(omegasq_anova_relative_bias_c_df , "0_omegasq_anova_relative_bias_c.xlsx") #omega squared values to Excel
+
+capture.output(summary_anova_relative_bias_c,file="summary_anova_relative_bias_c.doc") 
+```
+
+
+
+### summary statistics
+
+```{r}
+colnames(relative_bias_c_df_plots)
+(summary_relative_bias_c <- relative_bias_c_df_plots %>%
+    group_by(k_ac) %>% 
+    summarise(
+        Count = n(),
+        Mean = mean(relative_bias_c, na.rm = TRUE),
+        SD = sd(relative_bias_c, na.rm = TRUE),
+        Median = median(relative_bias_c, na.rm = TRUE),
+        IQR_Value = IQR(relative_bias_c, na.rm = TRUE),
+        Percentile_25 = quantile(relative_bias_c, 0.25, na.rm = TRUE),
+        Percentile_75 = quantile(relative_bias_c, 0.75, na.rm = TRUE),
+        Min = min(relative_bias_c, na.rm = TRUE),
+        Max = max(relative_bias_c, na.rm = TRUE)
+    ))
+
+summary_relative_bias_c
+
+
+```
+
+
+
+
+## 8.2. Corrected Relative Bias B
+
+
+
+### a) overall B relative bias values across every simulation
+
+```{r}
+
+# first I want to isolate the data that I will use for the ANOVA 
+
+str(final_results_df) #check if my factors are still there
+    # THEY ARE, PHEW!!!! 
+
+
+```
+### summary values
+
+```{r}
+colnames(relative_bias_c_df_plots)
+(summary_relative_bias_c_cor <- relative_bias_c_df_plots %>%
+    group_by(k_ac) %>% 
+    summarise(
+        Count = n(),
+        Mean = mean(rel_bias_c_cor, na.rm = TRUE),
+        SD = sd(rel_bias_c_cor, na.rm = TRUE),
+        Median = median(rel_bias_c_cor, na.rm = TRUE),
+        IQR_Value = IQR(rel_bias_c_cor, na.rm = TRUE),
+        Percentile_25 = quantile(rel_bias_c_cor, 0.25, na.rm = TRUE),
+        Percentile_75 = quantile(rel_bias_c_cor, 0.75, na.rm = TRUE),
+        Min = min(rel_bias_c_cor, na.rm = TRUE),
+        Max = max(rel_bias_c_cor, na.rm = TRUE)
+    ))
+colnames(summary_relative_bias_c_cor)
+summary_relative_bias_c_cor <- summary_relative_bias_b_cor %>%
+  select(k_ac,Mean, SD, Median,IQR_Value)
+
+summary_relative_bias_c <- summary_relative_bias_c %>%
+  select(k_ac,Mean, SD, Median,IQR_Value)
+
+combined_bias_c_sumStat_df <- bind_rows(summary_relative_bias_c_cor, summary_relative_bias_c)
+
+summary_bias_c_overall<-write.xlsx(combined_bias_c_sumStat_df,"0_combined_bias_c_sumStat_df.xlsx")
+```
+
+
+###  b ANOVA 
+
+```{r}
+# Perform ANOVA
+# 
+library(dplyr)
+correct_relative_bias_c_df<-final_results_df %>%
+  select(k_ac,k_ab_bc,j_cases,relative_bias_c_corrected)
+str(correct_relative_bias_c_df) #make double sure that the dataframe I am about to use, is indeed still containing the predefined factors necessary to do the ANOVA.
+
+is.na(correct_relative_bias_c_df) #all values are there 
+
+anova_relative_bias_c_corrected <- aov(relative_bias_c_corrected ~ j_cases + k_ac + k_ab_bc + k_ac:k_ab_bc + k_ac:j_cases + k_ab_bc:j_cases, data =correct_relative_bias_c_df)
+
+
+
+# Get summary of ANOVA
+
+(summary_anova_relative_bias_c_corrected<- summary(anova_relative_bias_c_corrected))
+
+
+
+summary_anova_relative_bias_c
+summary_anova_relative_bias_c_corrected
+
+# Calculate omega squared
+(omegasq_anova_relative_bias_c_corrected <- omega_squared(anova_relative_bias_c_corrected, partial = F))
+
+omegasq_anova_relative_bias_c
+
+omegasq_anova_relative_bias_c_corrected
+
+
+    # Create a data frame with omega squared values
+    omegasq_anova_relative_bias_c_corrected_df <- as.data.frame(omegasq_anova_relative_bias_c_corrected)
+
+
+# store in excel and word files for later use
+
+write.xlsx(omegasq_anova_relative_bias_c_corrected_df , "0_omegasq_anova_relative_bias_c.xlsx") #omega squared values to Excel
+
+capture.output(summary_anova_relative_bias_c_corrected,file="summary_anova_relative_bias_b.doc") 
+```
+
+## Combined plotting of corrected Bias B and corrected relative bias b 
+
+```{r}
+#create a plot with both
+
+
+
+str(relative_bias_c_df_plots)
+str(relative_bias_c_corrected_plots)
+
+rel_bias_c_cor<-relative_bias_c_corrected_plots$relative_bias_c_corrected
+
+relative_bias_c_df_plots$cor_rel_bias_c<-rel_bias_c_cor
+View(relative_bias_c_df_plots)
+
+
+relative_bias_c_df_plots_only_c<-relative_bias_c_df_plots %>%
+  select(k_ac,relative_bias_c,cor_rel_bias_c)
+View(relative_bias_c_df_plots_only_c)
+
+long_bias_c_df<-relative_bias_c_df_plots_only_c %>%
+  pivot_longer(
+    cols=c(relative_bias_c,cor_rel_bias_c),
+    names_to= "bias_type",
+    values_to = "relative_bias"
+  ) 
+View(long_bias_c_df)
+str(long_bias_c_df)
+library(dplyr)
+
+long_bias_c_df <- long_bias_c_df %>%
+  mutate(bias_type = case_when(
+    bias_type == "relative_bias_c" ~ "Relative Bias",
+    bias_type == "cor_rel_bias_c" ~ "Corrected Relative Bias",
+    TRUE ~ bias_type 
+  ))
+
+
+
+# Convert bias_type to a factor with two levels
+long_bias_c_df$bias_type <- factor(long_bias_c_df$bias_type, levels = c("Relative Bias", "Corrected Relative Bias"))
+
+# Now check the levels
+print(levels(long_bias_b_df$bias_type))
+
+# get min max value for y-axis plotting 
+
+
+
+
+min(relative_bias_c_corrected_plots$relative_bias_c_corrected)
+max(relative_bias_c_corrected_plots$relative_bias_c_corrected)
+
+
+boxplot_relative_bias_c <- ggplot(long_bias_c_df, aes(x = factor(k_ac), y = relative_bias, fill = bias_type)) +
+  geom_boxplot(position = position_dodge(0.8)) +  
+  scale_fill_manual(values = c("Relative Bias" = "#FFA07A", "Corrected Relative Bias" =  "#98FB98"))+
+  labs(x="Number of AC Studies", y="Relative Bias",fill="Bias Type") +
+  geom_hline(yintercept = 0.1, color = "#D55E00", linetype = "dashed", linewidth = 1) +
+  theme_minimal() +
+  scale_y_continuous(breaks = seq(-0.07, 0.44, by = 0.1), limits = c(-0.07, 0.44)) +
+  theme(
+    text = element_text(size = 12),
+    legend.position = "right",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_rect(fill = "white", colour = "white"),
+    axis.line = element_line(colour = "black"),
+    axis.ticks = element_line(colour = "black")
+  ) 
+
+boxplot_relative_bias_c
+
+
+ggsave("00_boxplot_relative_bias_c.png",
+       plot = boxplot_relative_bias_c,
+       width = 6,   
+       height = 4,  
+       units = "in",  
+       dpi = 1200)     
+
+# rel_bias_c<-relative_bias_c_df_plots$relative_bias_c
+# rel_bias_c_cor<-relative_bias_c_corrected_plots$relative_bias_c_corrected
+# 
+# relative_bias_b_df_plots$rel_bias_b_cor<-rel_bias_b_cor
+# relative_bias_b_df_plots$rel_bias_c<-rel_bias_c
+# relative_bias_b_df_plots$rel_bias_c_cor<-rel_bias_c_cor
+# 
+# 
+# View(relative_bias_b_df_plots) 
+# 
+# combined_bias_plots<-relative_bias_b_df_plots
+# colnames(combined_bias_plots)
+# "#619CFF"
+# 
+# write.xlsx(combined_bias_plots,"0_combined_bias_plots.xlsx")
+
+
+
+
+
+```
+
+
+
+# 9. MSE Error 
+
+## B 
+
+
+
+### a) overall B relative bias values across every simulation
+
+```{r}
+
+# first I want to isolate the data that I will use for the ANOVA 
+
+str(final_results_df) #check if my factors are still there
+    # THEY ARE, PHEW!!!! 
+
+
+MSE_b_df<- final_results_df %>% 
+  select(MSE_B,k_ab_bc,k_ac,j_cases) #isolate the variables of interest
+View(MSE_b_df) 
+
+
+
+library(dplyr)
+library(flextable)
+library(rempsyc)
+
+
+mse_b_df_plots
+
+# quickly get an overall summary of the data in a table that I can use in my thesis / copy values into a table of my thesis
+
+MSE_B_df_plots_arranged<- mse_b_df_plots %>% arrange(k_ab_bc)
+mse
+View(MSE_B_df_plots_arranged)
+#function to 3 decimals:
+colnames(MSE_B_df_plots_arranged)
+format_4_dec<-function(x)formatC(x,format="f",digits=4)
+
+?set_formatter()
+MSE_B_df_plots_arranged<-
+summary_MSE_b_values<-nice_table(
+  MSE_B_df_plots_arranged) %>% 
+  set_formatter(
+    k_ab_bc=format_4_dec,
+    k_ac=format_4_dec,
+    j_cases=format_4_dec,
+    MSE_B=format_4_dec,
+
+  )
+
+print(relative_bias_b_df_plots_arranged,preview="docx")
+
+
+```
+
+###  b ANOVA 
+
+```{r}
+# Perform ANOVA
+# 
+
+ 
+str(relative_bias_b_df) #make double sure that the dataframe I am about to use, is indeed still containing the predefined factors necessary to do the ANOVA.
+str(MSE_b_df)
+
+
+
+anova_MSE_b_df <- aov(MSE_B ~ j_cases + k_ac + k_ab_bc + k_ac:k_ab_bc + k_ac:j_cases + k_ab_bc:j_cases, data =MSE_b_df)
+
+
+
+# Get summary of ANOVA
+
+(summary_anova_anova_MSE_b_df<- summary(anova_MSE_b_df))
+
+
+# Calculate omega squared
+(omegasq_anova_MSE_b_df <- omega_squared(anova_MSE_b_df, partial = F)) 
+
+
+
+
+    # Create a data frame with omega squared values
+    omegasq_anova_mseBdf <- as.data.frame(omegasq_anova_MSE_b_df)
+    anova_MSE_b_df<-as.data.frame(summary_anova_anova_MSE_b_df)
+
+
+# store in excel and word files for later use
+
+write.xlsx(omegasq_anova_mseBdf , "0_anova_mseBdf.xlsx") #omega squared values to Excel
+
+capture.output(summary_anova_anova_MSE_b_df,file="summary_anova_anova_MSE_b_df.doc") 
+```
+
+
+
+### c). summary statistics
+
+```{r}
+colnames(mse_b_df_plots)
+MSE_B_df_plots_arranged
+(summary_mse_b_df_plots <- MSE_B_df_plots_arranged %>%
+    group_by(k_ac) %>% 
+    summarise(
+        Count = n(),
+        Mean = mean(MSE_B_df_plots_arranged$MSE_B, na.rm = TRUE),
+        SD = sd(MSE_B_df_plots_arranged$MSE_B, na.rm = TRUE),
+        Median = median(MSE_B_df_plots_arranged$MSE_B, na.rm = TRUE),
+        IQR_Value = IQR(MSE_B_df_plots_arranged$MSE_B, na.rm = TRUE),
+        Percentile_25 = quantile(MSE_B_df_plots_arranged$MSE_B, 0.25, na.rm = TRUE),
+        Percentile_75 = quantile(MSE_B_df_plots_arranged$MSE_B, 0.75, na.rm = TRUE),
+        Min = min(MSE_B_df_plots_arranged$MSE_B, na.rm = TRUE),
+        Max = max(MSE_B_df_plots_arranged$MSE_B, na.rm = TRUE)
+    ))
+(summary_mse_b_df_plots  <- mse_b_df_plots %>%
+    group_by(k_ac) %>% 
+    summarise(
+        Count = n(),
+        Mean = mean(MSE_B, na.rm = TRUE),
+        SD = sd(MSE_B, na.rm = TRUE),
+        Median = median(MSE_B, na.rm = TRUE),
+        IQR_Value = IQR(MSE_B, na.rm = TRUE),
+        Percentile_25 = quantile(MSE_B, 0.25, na.rm = TRUE),
+        Percentile_75 = quantile(MSE_B, 0.75, na.rm = TRUE),
+        Min = min(MSE_B, na.rm = TRUE),
+        Max = max(MSE_B, na.rm = TRUE)
+    ))
+summary_mse_b_df_plots
+
+write.xlsx(summary_mse_b_df_plots,"00_sum_mse_b_df.xlsx")
+```
+
+### plotting
+
+```{r}
+plot_t1_e_c_palette<- c("#E0FFFF","#FCCDE5","#FFFFE0","#98FB98","#FFA07A","#87CEFA","#F0E442","#E6E6FA","#FB9A99")
+
+  
+mse_b_df_plots0 <- read_excel("mse_b_df_plots0.xlsx")
+
+boxplot_mse_b <- ggplot(mse_b_df_plots0, aes(x = factor(k_ac), y = MSE_B, fill = factor(k_ac))) +
+    geom_boxplot() +
+    scale_fill_manual(values = plot_t1_e_c_palette)+  
+    theme_minimal() +
+    labs(x = "Number of AC Studies", y = "Mean Squared Error B") +
+    scale_y_continuous(breaks = seq(0.03, 0.4, by = 0.05), 
+                       limits = c(0.03, 0.4)) +
+    theme(text = element_text(size = 11),
+          legend.position = "none",
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.background = element_rect(fill = "white", colour = "white"),
+          axis.line = element_line(colour = "black"),
+          axis.ticks = element_line(colour = "black")) +
+    stat_summary(fun = median, geom = "text", aes(label = sprintf("%.4f", ..y..)), 
+                 vjust = -9, color = "black", size = 3.40)
+
+boxplot_mse_b
+
+
+ggsave("0boxplot_mse_b.png",
+       plot = boxplot_mse_b,
+       width = 6,   # Width in inches for A4 portrait (210 mm)
+       height = 4,  # Height in inches (one-third of A4 height, approximately 98.9 mm)
+       units = "in",  # Units of measurement
+       dpi = 1200)     # Resolution (adjust as neede
+```
+
+
+## C
+
+
+
+### a) overall C relative bias values across every simulation
+
+```{r}
+
+# first I want to isolate the data that I will use for the ANOVA 
+
+str(final_results_df) 
+
+
+MSE_c_df<- final_results_df %>% 
+  select(MSE_C,k_ab_bc,k_ac,j_cases) #isolate the variables of interest
+View(MSE_c_df) 
+
+write.xlsx(MSE_c_df,"mse_c_df.xlsx")
+
+library(dplyr)
+library(flextable)
+library(rempsyc)
+
+
+mse_b_df_plots
+
+# quickly get an overall summary of the data in a table that I can use in my thesis / copy values into a table of my thesis
+
+MSE_B_df_plots_arranged<- mse_b_df_plots %>% arrange(k_ab_bc)
+mse
+View(MSE_B_df_plots_arranged)
+#function to 3 decimals:
+colnames(MSE_B_df_plots_arranged)
+format_4_dec<-function(x)formatC(x,format="f",digits=4)
+
+?set_formatter()
+MSE_B_df_plots_arranged<-
+summary_MSE_b_values<-nice_table(
+  MSE_B_df_plots_arranged) %>% 
+  set_formatter(
+    k_ab_bc=format_4_dec,
+    k_ac=format_4_dec,
+    j_cases=format_4_dec,
+    MSE_B=format_4_dec,
+
+  )
+
+print(relative_bias_b_df_plots_arranged,preview="docx")
+
+
+```
+
+###  b ANOVA 
+
+```{r}
+# Perform ANOVA
+# 
+
+ 
+str(relative_bias_b_df) #make double sure that the dataframe I am about to use, is indeed still containing the predefined factors necessary to do the ANOVA.
+
+is.na(relative_bias_b_df) #all values are there 
+
+
+anova_relative_bias_b <- aov(relative_bias_b ~ j_cases + k_ac + k_ab_bc + k_ac:k_ab_bc + k_ac:j_cases + k_ab_bc:j_cases, data =relative_bias_b_df)
+
+
+
+# Get summary of ANOVA
+
+(summary_anova_relative_bias_b<- summary(anova_relative_bias_b))
+
+
+# Calculate omega squared
+(omegasq_anova_relative_bias_b <- omega_squared(anova_relative_bias_b, partial = F))
+
+
+
+
+    # Create a data frame with omega squared values
+    omegasq_anova_relative_bias_b_df <- as.data.frame(omegasq_anova_relative_bias_b)
+
+
+# store in excel and word files for later use
+
+write.xlsx(omegasq_anova_relative_bias_b_df , "0_omegasq_anova_relative_bias_b.xlsx") #omega squared values to Excel
+
+capture.output(summary_anova_relative_bias_b,file="summary_anova_relative_bias_b.doc") 
+```
+
+
+
+### c. summary statistics
+
+```{r}
+colnames(relative_bias_b_df_plots)
+(summary_relative_bias_b <- relative_bias_b_df_plots %>%
+    group_by(k_ac) %>% 
+    summarise(
+        Count = n(),
+        Mean = mean(relative_bias_b, na.rm = TRUE),
+        SD = sd(relative_bias_b, na.rm = TRUE),
+        Median = median(relative_bias_b, na.rm = TRUE),
+        IQR_Value = IQR(relative_bias_b, na.rm = TRUE),
+        Percentile_25 = quantile(relative_bias_b, 0.25, na.rm = TRUE),
+        Percentile_75 = quantile(relative_bias_b, 0.75, na.rm = TRUE),
+        Min = min(relative_bias_b, na.rm = TRUE),
+        Max = max(relative_bias_b, na.rm = TRUE)
+    ))
+
+summary_relative_bias_b
+
+
+# make a summary of only k_ac levels of 1, 5, and 10.
+
+summary_typeIerror_b_selected_k_ac_1_5_10 <- type_i_error_b_df_plots %>%
+    filter(k_ac %in% c(1, 5, 10)) %>%
+    group_by(k_ac) %>%
+    summarise(
+        Count = n(),
+        Mean = round(mean(Type1_Error_B, na.rm = TRUE),4),
+        SD = round(sd(Type1_Error_B, na.rm = TRUE),4),
+        Median = round(median(Type1_Error_B, na.rm = TRUE),4),
+        IQR_Value = round(IQR(Type1_Error_B, na.rm = TRUE),4),
+        Percentile_25 = round(quantile(Type1_Error_B, 0.25, na.rm = TRUE),4),
+        Percentile_75 = round(quantile(Type1_Error_B, 0.75, na.rm = TRUE),4),
+        Min = round(min(Type1_Error_B, na.rm = TRUE),4),
+        Max = round(max(Type1_Error_B, na.rm = TRUE),4))
+
+summary_typeIerror_b_selected_k_ac_1_5_10
+
+
+
+summary_typeIerror_b_selected_k_ac_15_20_25_30 <- type_i_error_b_df_plots %>%
+    filter(k_ac %in% c(15, 20, 25,30)) %>%
+    group_by(k_ac) %>%
+    summarise(
+        Count = n(),
+        Mean = round(mean(Type1_Error_B, na.rm = TRUE),4),
+        SD = round(sd(Type1_Error_B, na.rm = TRUE),4),
+        Median = round(median(Type1_Error_B, na.rm = TRUE),4),
+        IQR_Value = round(IQR(Type1_Error_B, na.rm = TRUE),4),
+        Percentile_25 = round(quantile(Type1_Error_B, 0.25, na.rm = TRUE),4),
+        Percentile_75 = round(quantile(Type1_Error_B, 0.75, na.rm = TRUE),4),
+        Min = round(min(Type1_Error_B, na.rm = TRUE),4),
+        Max = round(max(Type1_Error_B, na.rm = TRUE),4))
+
+summary_typeIerror_b_selected_k_ac_15_20_25_30
+```
+
